@@ -1,10 +1,42 @@
-// Add this function to your api.ts file (replace the existing saveScrape function)
-
 import { supabase, ScrapeData } from '../lib/supabase';
+
+export async function performScrape(
+  url: string,
+  keywords: string[] = [],
+  useGemini: boolean = true
+): Promise<{ success: boolean; data?: ScrapeData; error?: string }> {
+  try {
+    const edgeFunctionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scrape`;
+    const annonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    const response = await fetch(edgeFunctionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${annonKey}`,
+      },
+      body: JSON.stringify({
+        url,
+        keywords,
+        useGemini,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+      throw new Error(errorData.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    return { success: true, data };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to scrape website';
+    return { success: false, error: errorMessage };
+  }
+}
 
 export async function saveScrapeWithUser(scrapeData: ScrapeData, userId: string) {
   try {
-    // Add user_id to the scrape data
     const dataToSave = {
       ...scrapeData,
       user_id: userId,
@@ -14,7 +46,7 @@ export async function saveScrapeWithUser(scrapeData: ScrapeData, userId: string)
       .from('scrapes')
       .insert([dataToSave])
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
 
@@ -25,7 +57,6 @@ export async function saveScrapeWithUser(scrapeData: ScrapeData, userId: string)
   }
 }
 
-// Also update getAllScrapes to filter by user
 export async function getUserScrapes(userId: string) {
   try {
     const { data, error } = await supabase
@@ -43,14 +74,13 @@ export async function getUserScrapes(userId: string) {
   }
 }
 
-// Update deleteScrape to ensure user can only delete their own
 export async function deleteUserScrape(id: string, userId: string) {
   try {
     const { error } = await supabase
       .from('scrapes')
       .delete()
       .eq('id', id)
-      .eq('user_id', userId); // Ensure user owns the scrape
+      .eq('user_id', userId);
 
     if (error) throw error;
 
